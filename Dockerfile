@@ -1,42 +1,35 @@
 # Base CUDA image
-FROM cnstark/pytorch:2.0.1-py3.9.17-cuda11.8.0-ubuntu20.04
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 
-LABEL maintainer="breakstring@hotmail.com"
-LABEL version="dev-20240209"
 LABEL description="Docker image for GPT-SoVITS"
 
-
-# Install 3rd party apps
 ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=Etc/UTC
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends tzdata ffmpeg libsox-dev parallel aria2 git git-lfs && \
-    git lfs install && \
-    rm -rf /var/lib/apt/lists/*
 
-# Copy only requirements.txt initially to leverage Docker cache
+RUN apt update && apt install -y \
+    wget git curl ca-certificates \
+    libsndfile1 ffmpeg fonts-noto-cjk gcc g++ make cmake \
+    python3.10 python3.10-dev python3.10-distutils python3-pip\
+    libhtsengine-dev aria2\
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /workspace
-COPY requirements.txt /workspace/
+
+RUN python3 -m pip install --upgrade pip setuptools
+
+RUN wget "https://files.pythonhosted.org/packages/source/p/pyopenjtalk/pyopenjtalk-0.4.0.tar.gz"
+RUN TAR_FILE="pyopenjtalk-0.4.0.tar.gz" && \
+    DIR_NAME="pyopenjtalk-0.4.0" && \
+    tar -xzf "$TAR_FILE" && \
+    rm "$TAR_FILE" && \
+    CMAKE_FILE="$DIR_NAME/lib/open_jtalk/src/CMakeLists.txt" && \
+    sed -i -E 's/cmake_minimum_required\(VERSION[^\)]*\)/cmake_minimum_required(VERSION 3.5...3.31)/' "$CMAKE_FILE" && \
+    tar -czf "$TAR_FILE" "$DIR_NAME"
+RUN TAR_FILE="pyopenjtalk-0.4.0.tar.gz" && DIR_NAME="pyopenjtalk-0.4.0" && pip install "$TAR_FILE" && \
+    rm -rf "$TAR_FILE" "$DIR_NAME"
+
+COPY requirements.txt /workspace
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Define a build-time argument for image type
-ARG IMAGE_TYPE=full
-
-# Conditional logic based on the IMAGE_TYPE argument
-# Always copy the Docker directory, but only use it if IMAGE_TYPE is not "elite"
-COPY ./Docker /workspace/Docker 
-# elite 类型的镜像里面不包含额外的模型
-RUN if [ "$IMAGE_TYPE" != "elite" ]; then \
-        chmod +x /workspace/Docker/download.sh && \
-        /workspace/Docker/download.sh && \
-        python /workspace/Docker/download.py && \
-        python -m nltk.downloader averaged_perceptron_tagger cmudict; \
-    fi
-
-
-# Copy the rest of the application
 COPY . /workspace
 
-EXPOSE 9871 9872 9873 9874 9880
-
-CMD ["python", "webui.py"]
+CMD ["python3", "webui.py"]
